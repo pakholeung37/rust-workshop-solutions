@@ -19,9 +19,31 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
             item_count: 0,
         }
     }
-    // pub fn insert(&mut self, key: K, value: V) -> Option<&V> {
-    //     Some(())
-    // }
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let load_factor = self.item_count as f64 / self.slot_count as f64;
+        if load_factor >= MAX_LOAD_FACTOR {
+            self.resize();
+        }
+
+        let new_slot_index = self.slot_index(&key);
+        let slot = self.slot_mut(new_slot_index, &key);
+        match slot {
+            Some(slot) => {
+                let old = slot.replace(((key, value), new_slot_index));
+                match old {
+                    Some(((_, v), _)) => Some(v),
+                    None => {
+                        self.item_count += 1;
+                        None
+                    }
+                }
+            }
+            None => {
+                self.slots.push(Some(((key, value), new_slot_index)));
+                None
+            }
+        }
+    }
 
     pub fn get(&self, key: &K) -> Option<&V> {
         let slot_index = self.slot_index(&key);
@@ -43,6 +65,7 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
             None => true,
         })
     }
+
     fn slot_mut(&mut self, slot_index: usize, key: &K) -> Option<&mut Slot<K, V>> {
         self.slots
             .iter_mut()
@@ -58,6 +81,19 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
         let hash = hasher.finish();
         (hash % self.slot_count as u64) as usize
     }
+
+    fn resize(&mut self) {
+        self.slot_count *= 2;
+        let new_slots = Self::create_slots(self.slot_count);
+        let old_slots = std::mem::replace(&mut self.slots, new_slots);
+        for old_slot in old_slots.into_iter() {
+            if let Some(((key, value), slot_index)) = old_slot {
+                let slot = self.slot_mut(slot_index, &key).unwrap();
+                *slot = Some(((key, value), slot_index));
+            }
+        }
+    }
+
     fn create_slots(slot_count: usize) -> Vec<Slot<K, V>> {
         let mut new_slots = Vec::with_capacity(slot_count);
         for _ in 0..slot_count {
@@ -74,14 +110,14 @@ mod tests {
     #[test]
     fn map_works() {
         let mut map = HashMap::new();
-        // assert_eq!(map.insert("foo", "bar"), None);
-        // assert_eq!(map.insert("foo", "lol"), Some("bar"));
+        assert_eq!(map.insert("foo", "bar"), None);
+        assert_eq!(map.insert("foo", "lol"), Some("bar"));
 
         assert_eq!(map.get(&"foo"), Some(&"lol"));
         assert_eq!(map.get(&"foo"), Some(&"lol"));
         assert_eq!(map.get(&"qux"), None);
 
-        // assert_eq!(map.remove(&"foo"), Some("lol"));
+        assert_eq!(map.remove(&"foo"), Some("lol"));
         assert_eq!(map.get(&"foo"), None);
     }
 }
