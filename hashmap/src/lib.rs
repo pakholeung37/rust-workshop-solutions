@@ -22,6 +22,7 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let load_factor = self.item_count as f64 / self.slot_count as f64;
         if load_factor >= MAX_LOAD_FACTOR {
+            // The load factor is higher than what we want. We must resize.
             self.resize();
         }
 
@@ -30,6 +31,7 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
         match slot {
             Some(slot) => {
                 let old = slot.replace(((key, value), new_slot_index));
+
                 match old {
                     Some(((_, v), _)) => Some(v),
                     None => {
@@ -46,24 +48,17 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
-        let slot_index = self.slot_index(&key);
-        let slot = self.slot(slot_index, key)?;
-        let ((_, v), _) = slot.as_ref()?;
-        Some(v)
+        let slot_index = self.slot_index(key);
+        match self.slot(slot_index, key)?.as_ref()? {
+            ((_, v), _) => Some(v),
+        }
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        let slot_index = self.slot_index(&key);
-        let slot = self.slot_mut(slot_index, key)?;
-        let ((_, v), _) = slot.take()?;
-        Some(v)
-    }
-
-    fn slot(&self, slot_index: usize, key: &K) -> Option<&Slot<K, V>> {
-        self.slots.iter().skip(slot_index).find(|item| match item {
-            Some(((k, _), _)) => k == key,
-            None => true,
-        })
+        let slot_index = self.slot_index(key);
+        match self.slot_mut(slot_index, key)?.take()? {
+            ((_, v), _) => Some(v),
+        }
     }
 
     fn slot_mut(&mut self, slot_index: usize, key: &K) -> Option<&mut Slot<K, V>> {
@@ -75,6 +70,14 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
                 None => true,
             })
     }
+
+    fn slot(&self, slot_index: usize, key: &K) -> Option<&Slot<K, V>> {
+        self.slots.iter().skip(slot_index).find(|item| match item {
+            Some(((k, _), _)) => k == key,
+            None => true,
+        })
+    }
+
     fn slot_index(&self, key: &K) -> usize {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
@@ -89,15 +92,15 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
         for old_slot in old_slots.into_iter() {
             if let Some(((key, value), slot_index)) = old_slot {
                 let slot = self.slot_mut(slot_index, &key).unwrap();
-                *slot = Some(((key, value), slot_index));
+                *slot = Some(((key, value), slot_index))
             }
         }
     }
 
     fn create_slots(slot_count: usize) -> Vec<Slot<K, V>> {
         let mut new_slots = Vec::with_capacity(slot_count);
-        for _ in 0..slot_count {
-            new_slots.push(None);
+        for _ in 1..slot_count {
+            new_slots.push(None)
         }
         new_slots
     }
